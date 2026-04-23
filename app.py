@@ -3,6 +3,7 @@ from faster_whisper import WhisperModel
 import tempfile
 import os
 import subprocess
+import uuid
 
 # ---------------- TIME FORMAT ----------------
 def format_time(seconds):
@@ -23,14 +24,17 @@ if uploaded_file:
 
         st.info("Processing video... Please wait ⏳")
 
+        # ---------------- UNIQUE SESSION ID (IMPORTANT FIX) ----------------
+        session_id = str(uuid.uuid4())
+
+        fixed_path = f"/tmp/fixed_{session_id}.mp4"
+        output_path = f"/tmp/output_{session_id}.mp4"
+        srt_path = f"/tmp/captions_{session_id}.srt"
+
         # ---------------- SAVE INPUT ----------------
         with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp:
             temp.write(uploaded_file.read())
             input_path = temp.name
-
-        fixed_path = "fixed.mp4"
-        output_path = "output.mp4"
-        srt_path = "captions.srt"
 
         # ---------------- SAFE FFMPEG CONVERT ----------------
         subprocess.run([
@@ -44,7 +48,7 @@ if uploaded_file:
         # ---------------- LOAD MODEL (SMALL) ----------------
         model = WhisperModel("small", compute_type="int8")
 
-        # ---------------- TRANSCRIBE (IMPROVED ACCURACY) ----------------
+        # ---------------- TRANSCRIBE ----------------
         segments, _ = model.transcribe(
             fixed_path,
             beam_size=5,
@@ -74,10 +78,13 @@ if uploaded_file:
 
         st.success("Done Captions Generated")
 
-        # ---------------- DOWNLOAD ----------------
+        # ---------------- SAFE DOWNLOAD (IMPORTANT FIX) ----------------
         with open(output_path, "rb") as f:
-            st.download_button(
-                "⬇ Download Captioned Video",
-                f,
-                file_name="captioned.mp4"
-            )
+            video_bytes = f.read()
+
+        st.download_button(
+            "⬇ Download Captioned Video",
+            data=video_bytes,
+            file_name="captioned.mp4",
+            mime="video/mp4"
+        )
