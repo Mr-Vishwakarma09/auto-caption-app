@@ -2,6 +2,7 @@ import streamlit as st
 from moviepy.editor import VideoFileClip, TextClip, CompositeVideoClip
 from faster_whisper import WhisperModel
 import tempfile
+import os
 
 st.title("Auto Caption Generator 🎬")
 
@@ -18,30 +19,38 @@ if uploaded_file:
             temp_input.write(uploaded_file.read())
             input_path = temp_input.name
 
-        # Load lightweight model (important)
-        model = WhisperModel("tiny")
+        # 🔥 Step 1: Normalize video using FFmpeg (CRITICAL FIX)
+        fixed_path = "fixed.mp4"
+        os.system(f"ffmpeg -y -i {input_path} -vcodec libx264 -acodec aac {fixed_path}")
 
-        # Load & resize video (faster processing)
-        video = VideoFileClip(input_path).resize(height=720)
+        # 🔥 Step 2: Load video safely
+        try:
+            video = VideoFileClip(fixed_path)
+        except Exception as e:
+            st.error("❌ Error loading video. Try another file.")
+            st.stop()
 
         # Limit duration (MVP safety)
         if video.duration > 30:
-            st.error("Video too long! Keep it under 30 seconds.")
+            st.error("❌ Video too long! Keep it under 30 seconds.")
             st.stop()
 
+        # 🔥 Step 3: Load Whisper model (lightweight)
+        model = WhisperModel("tiny")
+
         # Transcribe audio
-        segments, _ = model.transcribe(input_path)
+        segments, _ = model.transcribe(fixed_path)
 
         clips = [video]
 
-        # Caption position (slightly above bottom line)
-        y_pos = video.h * 0.88   # 🔥 perfect "below but not touching bottom"
+        # Caption position (bottom-safe zone)
+        y_pos = video.h * 0.88
 
-        # Create captions
+        # 🔥 Step 4: Add captions
         for segment in segments:
             txt = segment.text.strip()
 
-            if txt:  # avoid empty text
+            if txt:
                 text_clip = (
                     TextClip(
                         txt,
@@ -49,7 +58,7 @@ if uploaded_file:
                         color="white",
                         stroke_color="black",
                         stroke_width=2,
-                        method="caption",   # better text wrapping
+                        method="caption",
                         size=(video.w * 0.8, None)
                     )
                     .set_position(("center", y_pos))
@@ -59,7 +68,7 @@ if uploaded_file:
 
                 clips.append(text_clip)
 
-        # Combine video + captions
+        # 🔥 Step 5: Combine video + captions
         final = CompositeVideoClip(clips)
 
         # Export
@@ -71,7 +80,7 @@ if uploaded_file:
             fps=24
         )
 
-        st.success("Done ✅")
+        st.success("✅ Done!")
 
         # Download button
         with open(output_path, "rb") as f:
