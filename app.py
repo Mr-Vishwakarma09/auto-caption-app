@@ -1,5 +1,4 @@
 import streamlit as st
-from moviepy.editor import VideoFileClip, TextClip, CompositeVideoClip
 from faster_whisper import WhisperModel
 import tempfile
 import os
@@ -12,80 +11,48 @@ if uploaded_file:
 
     if st.button("Generate Captions"):
 
-        st.info("Processing... ⚡ Please wait")
+        st.info("Processing... ⚡")
 
-        # Save uploaded file
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_input:
-            temp_input.write(uploaded_file.read())
-            input_path = temp_input.name
+        # Save file
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp:
+            temp.write(uploaded_file.read())
+            input_path = temp.name
 
-        # 🔥 Step 1: Normalize video using FFmpeg (CRITICAL FIX)
+        # Normalize video
         fixed_path = "fixed.mp4"
         os.system(f"ffmpeg -y -i {input_path} -vcodec libx264 -acodec aac {fixed_path}")
 
-        # 🔥 Step 2: Load video safely
-        try:
-            video = VideoFileClip(fixed_path)
-        except Exception as e:
-            st.error("❌ Error loading video. Try another file.")
-            st.stop()
-
-        # Limit duration (MVP safety)
-        if video.duration > 30:
-            st.error("❌ Video too long! Keep it under 30 seconds.")
-            st.stop()
-
-        # 🔥 Step 3: Load Whisper model (lightweight)
+        # Load model
         model = WhisperModel("tiny")
 
-        # Transcribe audio
         segments, _ = model.transcribe(fixed_path)
 
-        clips = [video]
+        # Create subtitles file
+        srt_path = "captions.srt"
+        with open(srt_path, "w") as f:
+            for i, seg in enumerate(segments):
+                start = seg.start
+                end = seg.end
+                text = seg.text.strip()
 
-        # Caption position (bottom-safe zone)
-        y_pos = video.h * 0.88
+                f.write(f"{i+1}\n")
+                f.write(f"{format_time(start)} --> {format_time(end)}\n")
+                f.write(f"{text}\n\n")
 
-        # 🔥 Step 4: Add captions
-        for segment in segments:
-            txt = segment.text.strip()
-
-            if txt:
-                text_clip = (
-                    TextClip(
-                        txt,
-                        fontsize=45,
-                        color="white",
-                        stroke_color="black",
-                        stroke_width=2,
-                        method="caption",
-                        size=(video.w * 0.8, None)
-                    )
-                    .set_position(("center", y_pos))
-                    .set_start(segment.start)
-                    .set_end(segment.end)
-                )
-
-                clips.append(text_clip)
-
-        # 🔥 Step 5: Combine video + captions
-        final = CompositeVideoClip(clips)
-
-        # Export
+        # Burn subtitles into video
         output_path = "output.mp4"
-        final.write_videofile(
-            output_path,
-            codec="libx264",
-            audio_codec="aac",
-            fps=24
-        )
+        os.system(f"ffmpeg -y -i {fixed_path} -vf subtitles={srt_path} {output_path}")
 
-        st.success("✅ Done!")
+        st.success("Done ✅")
 
-        # Download button
         with open(output_path, "rb") as f:
-            st.download_button(
-                "Download Captioned Video",
-                f,
-                file_name="captioned_video.mp4"
-            )
+            st.download_button("Download Video", f, file_name="captioned.mp4")
+
+
+def format_time(seconds):
+    hrs = int(seconds // 3600)
+    mins = int((seconds % 3600) // 60)
+    secs = int(seconds % 60)
+    ms = int((seconds - int(seconds)) * 1000)
+
+    return f"{hrs:02}:{mins:02}:{secs:02},{ms:03}"
